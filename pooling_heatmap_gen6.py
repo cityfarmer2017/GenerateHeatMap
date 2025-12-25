@@ -34,15 +34,17 @@ def _extract_coordinates(column_name):
     if match:
         row_char = match.group(1)
         col_str = match.group(2)
+        remote = (match.group(3) == "Remote")
+        non_v3 = (match.group(4) != "_v3")
         # Determine if it's upper or lower case
         if row_char.isupper():
             row = ord(row_char) - ord('A')
             col = int(col_str)
-            return row, col, 'upper'
+            return row, col, 'upper', remote, non_v3
         else:
             row = ord(row_char) - ord('a')
             col = int(col_str) - 16  # Adjust for lower case (16-19 -> 0-3)
-            return row, col, 'lower'
+            return row, col, 'lower', remote, non_v3
     return None
 
 
@@ -59,7 +61,7 @@ def _read_csv_safe(csv_file: str):
         return None
 
 
-def _generate_heatmap(config: str, matching_columns: list, df_config: pd.DataFrame, count:int, func: str):
+def _generate_heatmap(matching_columns: list, df_config: pd.DataFrame, count:int, func: str, remote: bool, non_v3: bool):
     """Core logic to generate heatmaps"""
     heatmaps = {}
 
@@ -75,8 +77,11 @@ def _generate_heatmap(config: str, matching_columns: list, df_config: pd.DataFra
         if not coords:
             continue
 
-        row_idx, col_idx, case_type = coords
-        
+        row_idx, col_idx, case_type, rem, n_v3 = coords
+
+        if rem != remote or n_v3 != non_v3:
+            continue
+
         # Get column values (handle non-numeric values)
         values = pd.to_numeric(df_config[column], errors='coerce').fillna(0)
         
@@ -95,7 +100,7 @@ def _generate_heatmap(config: str, matching_columns: list, df_config: pd.DataFra
                 elif func == 'mean':
                     heatmap_lower[row_idx, col_idx] += values.sum()
                     count_map_lower[row_idx, col_idx] += values.count()
-    
+
     # Calculate mean if needed
     if func == 'mean':
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -103,7 +108,7 @@ def _generate_heatmap(config: str, matching_columns: list, df_config: pd.DataFra
             heatmap_upper = np.nan_to_num(heatmap_upper)
             heatmap_lower = np.divide(heatmap_lower, count_map_lower)
             heatmap_lower = np.nan_to_num(heatmap_lower)
-    
+
     return (heatmap_upper, heatmap_lower, count)
 
 
@@ -175,7 +180,7 @@ def generate_heatmaps_per_config(csv_file: str, func: str, remote: bool, non_v3:
         count = len(df_config)
         print(f"  Number of rows for this configuration: {count}")
 
-        heatmaps[config] = _generate_heatmap(config, matching_columns, df_config, count, func)
+        heatmaps[config] = _generate_heatmap(matching_columns, df_config, count, func, remote, non_v3)
     
     return heatmaps
 
@@ -207,7 +212,7 @@ def generate_overall_heatmap(csv_file: str, func: str, remote: bool, non_v3: boo
         return {}
 
     heatmap = {}
-    heatmap['Overall'] = _generate_heatmap("Overall", matching_columns, df, total_count, func)
+    heatmap['Overall'] = _generate_heatmap(matching_columns, df, total_count, func, remote, non_v3)
     return heatmap
 
 
